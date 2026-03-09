@@ -12,14 +12,22 @@ CREATE TABLE q1(
     email TEXT	
 );
 
--- You may find it convenient to do this for each of the views
--- that define your intermediate steps. (But give them better names!)
-DROP VIEW IF EXISTS IntermediateStep CASCADE;
+-- IID of products that dont have any ratings
+DROP VIEW IF exists UnratedProducts CASCADE;
+CREATE VIEW UnratedProducts AS
+    SELECT IID FROM Item 
+    EXCEPT
+    SELECT IID FROM Review;
 
--- Define views for your intermediate steps here:
-CREATE VIEW IntermediateStep AS ... ;
-
-
+-- Customers who have bought atleast 3 unrated products
+DROP VIEW IF exists NaiveCustomers CASCADE;
+CREATE VIEW NaiveCustomers AS
+    SELECT CID
+    FROM (Purchase NATURAL JOIN LineItem) NATURAL JOIN UnratedProducts
+    GROUP BY CID
+    HAVING COUNT(DISTINCT IID) >= 3;
 
 -- Your query that answers the question goes below the "insert into" line:
 INSERT INTO q1
+SELECT DISTINCT CID, first_name, last_name, email
+FROM Customer NATURAL JOIN NaiveCustomers;
