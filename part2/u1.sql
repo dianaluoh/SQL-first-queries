@@ -1,5 +1,6 @@
 -- SALE!SALE!SALE!
 
+
 -- You must not change the next 2 lines or the table definition.
 SET SEARCH_PATH TO Recommender;
 
@@ -35,5 +36,3 @@ FROM IntermediateStep s
 WHERE i.IID = s.IID
   AND s.total_units_sold >= 10
   AND s.old_price >= 10;
-
-
