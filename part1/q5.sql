@@ -11,14 +11,41 @@ CREATE TABLE q5 (
     items INTEGER NOT NULL
 );
 
--- You may find it convenient to do this for each of the views
--- that define your intermediate steps. (But give them better names!)
-DROP VIEW IF EXISTS IntermediateStep CASCADE;
+-- Total number of items bought by each customer in each year.
+DROP VIEW IF EXISTS CustomerYearTotals CASCADE;
+CREATE VIEW CustomerYearTotals AS
+SELECT
+    TO_CHAR(p.checkout_time, 'YYYY') AS year,
+    p.CID,
+    SUM(li.quantity) AS items
+FROM Purchase p
+JOIN LineItem li
+    ON p.PID = li.PID
+GROUP BY TO_CHAR(p.checkout_time, 'YYYY'), p.CID;
 
--- Define views for your intermediate steps here:
-CREATE VIEW IntermediateStep AS ... ;
-
-
+-- Hyperconsumers: customers whose total is among the top 5 distinct totals for that year.
+DROP VIEW IF EXISTS HyperConsumers CASCADE;
+CREATE VIEW HyperConsumers AS
+SELECT
+    t1.year,
+    t1.CID,
+    t1.items
+FROM CustomerYearTotals t1
+WHERE (
+    SELECT COUNT(DISTINCT t2.items)
+    FROM CustomerYearTotals t2
+    WHERE t2.year = t1.year
+      AND t2.items > t1.items
+) < 5;
 
 -- Your query that answers the question goes below the "insert into" line:
 INSERT INTO q5
+SELECT
+    h.year,
+    c.first_name || ' ' || c.last_name AS name,
+    c.email,
+    h.items
+FROM HyperConsumers h
+JOIN Customer c
+    ON h.CID = c.CID
+ORDER BY h.year, h.items DESC, c.CID;
