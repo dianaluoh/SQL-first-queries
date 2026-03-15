@@ -1,5 +1,6 @@
 -- Curators
 
+
 -- You must not change the next 2 lines or the table definition.
 SET SEARCH_PATH TO Recommender;
 DROP TABLE IF EXISTS q3 CASCADE;
