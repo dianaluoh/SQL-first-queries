@@ -115,11 +115,48 @@ class Recommender:
         # TODO - complete this method
 
         try:
-            pass
+            cursor = self.connection.cursor()
+            cursor.execute("DELETE FROM EliteRating;")
+            cursor.execute("DELETE FROM PopularItem;")
+            cursor.execute("""
+                WITH ItemSales AS (
+                    SELECT IID, sum(quantity) AS units_sold
+                    FROM LineItem
+                    GROUP BY IID
+                ),
+                CatSales AS (
+                    SELECT i.IID, i.category, s.units_sold
+                    FROM Item i
+                    JOIN ItemSales s ON i.IID = s.IID
+                ),
+                RankedSales AS (
+                    SELECT IID, units_sold,
+                           DENSE_RANK() OVER (PARTITION BY category ORDER BY units_sold DESC) as rank
+                    FROM CatSales
+                ),
+                Popular AS (
+                    SELECT IID FROM RankedSales WHERE rank <= 2
+                ),
+                ItemAvg AS (
+                    SELECT p.IID, AVG(r.rating::FLOAT) as avg_rating
+                    FROM Popular p
+                    LEFT JOIN Review r ON p.IID = r.IID
+                    GROUP BY p.IID
+                )
+                INSERT INTO PopularItem (IID, avg_rating)
+                SELECT IID, avg_rating FROM ItemAvg;
+            """)
+            cursor.execute("""
+                INSERT INTO EliteRating (CID, IID, rating)
+                SELECT e.CID, p.IID, r.rating
+                FROM EliteMember e
+                JOIN Review r ON e.CID = r.CID
+                JOIN PopularItem p ON r.IID = p.IID;
+            """)
+            self.connection.commit()
+            cursor.close()
+            return True
         except pg.Error as ex:
-            # You may find it helpful to uncomment this line while debugging,
-            # as it will show you all the details of the error that occurred:
-            # raise ex
             return False
 
     def recommend_generic(self, k: int) -> Optional[list[int]]:
@@ -150,7 +187,16 @@ class Recommender:
         # TODO - complete this method
 
         try:
-            pass
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT IID
+                FROM PopularItem
+                ORDER BY avg_rating DESC NULLS LAST, IID ASC
+                LIMIT %s;
+            """, (k,))
+            results = cursor.fetchall()
+            cursor.close()
+            return [row[0] for row in results]
         except pg.Error as ex:
             # You may find it helpful to uncomment this line while debugging,
             # as it will show you all the details of the error that occurred:
@@ -213,21 +259,56 @@ class Recommender:
         # TODO - complete this method
 
         try:
-            pass
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                WITH SharedRated AS (
+                    SELECT e.CID as elite_cid,
+                           r_cust.rating as cust_rating,
+                           e.rating as elite_rating
+                    FROM EliteRating e
+                    JOIN Review r_cust ON e.IID = r_cust.IID
+                    WHERE r_cust.CID = %s
+                ),
+                AvgDiff AS (
+                    SELECT elite_cid, AVG(ABS(cust_rating - elite_rating)::FLOAT) as avg_diff
+                    FROM SharedRated
+                    GROUP BY elite_cid
+                ),
+                BestElite AS (
+                    SELECT elite_cid
+                    FROM AvgDiff
+                    ORDER BY avg_diff ASC, elite_cid ASC
+                    LIMIT 1
+                )
+                SELECT elite_cid FROM BestElite;
+            """, (cust,))
+            row = cursor.fetchone()
+            if not row:
+                cursor.close()
+                return self.recommend_generic(k)
+            best_elite = row[0]
+            cursor.execute("""
+                SELECT r.IID
+                FROM Review r
+                WHERE r.CID = %s
+                  AND r.IID NOT IN (
+                      SELECT l.IID
+                      FROM LineItem l
+                      JOIN Purchase p ON l.PID = p.PID
+                      WHERE p.CID = %s
+                  )
+                ORDER BY r.rating DESC, r.IID ASC
+                LIMIT %s;
+            """, (best_elite, cust, k))
+            recs = [r[0] for r in cursor.fetchall()]
+            cursor.close()
+            if len(recs) == 0:
+                return self.recommend_generic(k)
+            return recs
         except pg.Error as ex:
-            # You may find it helpful to uncomment this line while debugging,
-            # as it will show you all the details of the error that occurred:
-            # raise ex
             return None
 
 
 if __name__ == "__main__":
-    # Un comment-out the next two lines if you would like all the doctest
-    # examples (see ">>>" in the method and class docstrings) to be run
-    # and checked.
-    # import doctest
-    # doctest.testmod()
-
-    # You can add testing code here or even better, add your tests in a
-    # separate file like we do in test_preliminary.py.
-    pass
+    import doctest
+    doctest.testmod()
